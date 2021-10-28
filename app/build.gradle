@@ -1,0 +1,57 @@
+apply plugin: 'com.android.application'
+apply from: "$projectDir/build_base.gradle"
+apply from: "$projectDir/build_sdk.gradle"
+
+android {
+    buildToolsVersion '28.0.3'
+    ndkVersion '21.4.7075529'
+    defaultConfig {
+        applicationId "com.htc.vr.samples.wavecloudxr"
+        versionCode 0
+        versionName "1.0"
+    }
+
+    signingConfigs {
+        debug {}
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    flavorDimensions "version"
+    productFlavors {
+        bit32 {
+            dimension "version"
+            applicationId "com.htc.vr.samples.wavecloudxr.armv7a"
+            ndk {
+                abiFilter 'armeabi-v7a'
+            }
+        }
+        bit64 {
+            dimension "version"
+            applicationId "com.htc.vr.samples.wavecloudxr"
+            ndk {
+                abiFilter 'arm64-v8a'
+            }
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs 'libs'
+    }
+}
+
+dependencies {
+    api 'com.htc.vr:wvr_client:+'
+    implementation "com.nvidia.CloudXRClient:CloudXR@aar"
+    implementation 'com.android.support:support-compat:28.0.0'
+    implementation 'com.android.support:support-v4:28.0.0'
+}

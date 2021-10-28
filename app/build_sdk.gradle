@@ -1,0 +1,76 @@
+apply from: "$projectDir/build_base.gradle"
+def jniDir = "src/main/jni"
+def aarFilename = "wvr_client"
+
+// unzip CloudXR SDK into build directory
+def cxrFile = file("${projectDir}/libs/CloudXR.aar")
+def CLOUDXR_SDK_ROOT = file("${buildDir}/CloudXR")
+if (cxrFile != null) {
+    copy {
+        println 'unzipping ' + cxrFile + ' into ' + CLOUDXR_SDK_ROOT
+        from zipTree(cxrFile)
+        into CLOUDXR_SDK_ROOT
+    }
+}
+
+// unzip the Oboe sdk into build directory
+def oboeVersion = "1.5.0"
+def oboeFile = file("${projectDir}/libs/oboe-${oboeVersion}.aar")
+def OBOE_SDK_ROOT = file("${buildDir}/Oboe")
+if (oboeFile != null) {
+    copy {
+        println 'unzipping ' + oboeFile + ' into ' + OBOE_SDK_ROOT
+        from zipTree(oboeFile)
+        into OBOE_SDK_ROOT
+    }
+}
+
+android {
+    defaultConfig {
+        externalNativeBuild { ndkBuild {
+            def VR_SDK_ROOT = "${buildDir}/${aarFilename}"
+            arguments "VR_SDK_ROOT=$VR_SDK_ROOT"
+            arguments "OBOE_SDK_ROOT=$OBOE_SDK_ROOT"
+            arguments "CLOUDXR_SDK_ROOT=$CLOUDXR_SDK_ROOT"
+        }}
+        ndk {
+            abiFilters 'armeabi-v7a'
+        }
+    }
+
+    externalNativeBuild {
+        ndkBuild {
+            path "${jniDir}/Android.mk"
+        }
+    }
+
+    buildTypes {
+        release {
+            externalNativeBuild { ndkBuild {
+                arguments "NDK_DEBUG=0"
+            }}
+        }
+        debug {
+            externalNativeBuild { ndkBuild {
+                arguments "NDK_DEBUG=1"
+            }}
+        }
+    }
+}
+
+dependencies {
+    compile 'com.htc.vr:wvr_client:+'
+}
+
+// unzip aar
+afterEvaluate {
+    def unzipDir = file("${buildDir}/${aarFilename}")
+    def artifacts = configurations.compile.resolvedConfiguration.resolvedArtifacts
+    artifacts.find { it.name == aarFilename }?.with { aar ->
+        copy {
+            println 'unzip: ' + aar
+            from zipTree(aar.file)
+            into unzipDir
+        }
+    }
+}

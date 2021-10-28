@@ -1,0 +1,4 @@
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="app_name">Wave CloudXR Sample Client</string>
+    <string name="main_activity">Wave CloudXR Sample Client</string>
+</resources>
