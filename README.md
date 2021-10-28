@@ -4,6 +4,7 @@ Demonstrate how to program with NVIDIA CloudXR SDK 3.0 for VIVE Focus 3 headset.
 
 ## Requirement
 - HTC VIVE Focus 3
+- [CloudXR SDK 3.0](https://developer.nvidia.com/nvidia-cloudxr-sdk)
 - [Google OBOE SDK 1.5.0](https://github.com/google/oboe/releases/tag/1.5.0)
 - [Wave Native SDK 4.1.1](https://developer.vive.com/resources/vive-wave/download/) or later
 - Android development environment
@@ -12,17 +13,19 @@ Demonstrate how to program with NVIDIA CloudXR SDK 3.0 for VIVE Focus 3 headset.
   - Android build tools 28.0.3
   - Android NDK 21.4.7075529
   - OpenJDK 1.8n   
-## How to build
-1. Download CloudXR SDK 3.0 and oboe-1.5.0.aar.
-2. Put CloudXR.aar and oboe-1.5.0.aar in [ProjectRoot]/app/libs
-3. Download Wave SDK and put in [ProjectRoot]/repo (paths can be modified in build_sdk.gradle)
+  
+## How to Build
+1. Download [CloudXR SDK 3.0](https://developer.nvidia.com/nvidia-cloudxr-sdk) and [Google OBOE SDK 1.5.0](https://github.com/google/oboe/releases/tag/1.5.0).
+2. Put ***CloudXR.aar*** and ***oboe-1.5.0.aar*** in ***[ProjectRoot]/app/libs***
+3. Download Wave SDK and put in ***[ProjectRoot]/repo*** (paths can be modified in ***build_sdk.gradle***)
 4. You are ready to build.
 
 ## How To Use
 1. Install CloudXR server 3.0 on your PC.
 2. Build Wave CloudXR Sample Client and install the apk to your VIVE Focus 3
-3. Modify the IP address in CloudXRLaunchOptions.txt and push it into /sdcard of your VIVE Focus 3. Please read [CloudXR Command-Line Options](https://docs.nvidia.com/cloudxr-sdk/usr_guide/cmd_line_options.html#command-line-options) for the format of CloudXRLaunchOptions.txt)
-4. Launch the apk to start streaming
+3. Modify the IP address in ***CloudXRLaunchOptions.txt*** and push it into ***/sdcard*** of your VIVE Focus 3. 
+   - Please read [CloudXR Command-Line Options](https://docs.nvidia.com/cloudxr-sdk/usr_guide/cmd_line_options.html#command-line-options) for the format of ***CloudXRLaunchOptions.txt***)
+5. Launch the apk to start streaming
 
 ## Note
 * The application requires WRITE_EXTERNAL_STORAGE permission to proceed, for loading a config file from sdcard and writing CloudXR logs.
