@@ -4,9 +4,9 @@ Demonstrate how to program with NVIDIA CloudXR SDK 3.0 for VIVE Focus 3 headset.
 
 ## Requirement
 - HTC VIVE Focus 3
+- [Wave Native SDK 4.1.1](https://developer.vive.com/resources/vive-wave/download/latest/) or later
 - [CloudXR SDK 3.0](https://developer.nvidia.com/nvidia-cloudxr-sdk)
 - [Google OBOE SDK 1.5.0](https://github.com/google/oboe/releases/tag/1.5.0)
-- [Wave Native SDK 4.1.1](https://developer.vive.com/resources/vive-wave/download/) or later
 - Android development environment
   - Android Studio 4.0 or later
   - Android SDK 7.1.1 ‘Nougat’ (API level 25) or higher
