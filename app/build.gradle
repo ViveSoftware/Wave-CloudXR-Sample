@@ -7,7 +7,7 @@ android {
     ndkVersion '21.4.7075529'
     defaultConfig {
         applicationId "com.htc.vr.samples.wavecloudxr"
-        versionCode 0
+        versionCode 1
         versionName "1.0"
     }
 
