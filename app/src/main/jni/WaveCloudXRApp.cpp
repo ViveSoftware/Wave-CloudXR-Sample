@@ -102,7 +102,7 @@ bool WaveCloudXRApp::initVR() {
 
     // Init Wave Render
     WVR_RenderInitParams_t param;
-    param = { WVR_GraphicsApiType_OpenGL, WVR_RenderConfig_Default };
+    param = { WVR_GraphicsApiType_OpenGL, WVR_RenderConfig_sRGB };
 
     WVR_RenderError pError = WVR_RenderInit(&param);
     if (pError != WVR_RenderError_None) {
@@ -129,13 +129,13 @@ bool WaveCloudXRApp::initGL() {
 
     mLeftEyeQ = WVR_ObtainTextureQueue(WVR_TextureTarget_2D, WVR_TextureFormat_RGBA, WVR_TextureType_UnsignedByte, mRenderWidth, mRenderHeight, 0);
     for (int i = 0; i < WVR_GetTextureQueueLength(mLeftEyeQ); i++) {
-        GLuint fbo = CreateGLFramebuffer((GLuint)WVR_GetTexture(mLeftEyeQ, i).id);
+        GLuint fbo = CreateGLFramebuffer((GLuint)(size_t)WVR_GetTexture(mLeftEyeQ, i).id);
         mLeftEyeFBO.push_back(fbo);
     }
 
     mRightEyeQ = WVR_ObtainTextureQueue(WVR_TextureTarget_2D, WVR_TextureFormat_RGBA, WVR_TextureType_UnsignedByte, mRenderWidth, mRenderHeight, 0);
     for (int i = 0; i < WVR_GetTextureQueueLength(mRightEyeQ); i++) {
-        GLuint fbo = CreateGLFramebuffer((GLuint)WVR_GetTexture(mRightEyeQ, i).id);
+        GLuint fbo = CreateGLFramebuffer((GLuint)(size_t)WVR_GetTexture(mRightEyeQ, i).id);
         mRightEyeFBO.push_back(fbo);
 	}
 
@@ -251,13 +251,13 @@ void WaveCloudXRApp::RecreateFramebuffer(const uint32_t width, const uint32_t he
 
     mLeftEyeQ = WVR_ObtainTextureQueue(WVR_TextureTarget_2D, WVR_TextureFormat_RGBA, WVR_TextureType_UnsignedByte, width, height, 0);
     for (int i = 0; i < WVR_GetTextureQueueLength(mLeftEyeQ); i++) {
-        GLuint fbo = CreateGLFramebuffer((GLuint)WVR_GetTexture(mLeftEyeQ, i).id);
+        GLuint fbo = CreateGLFramebuffer((GLuint)(size_t)WVR_GetTexture(mLeftEyeQ, i).id);
         mLeftEyeFBO.push_back(fbo);
     }
 
     mRightEyeQ = WVR_ObtainTextureQueue(WVR_TextureTarget_2D, WVR_TextureFormat_RGBA, WVR_TextureType_UnsignedByte, width, height, 0);
     for (int i = 0; i < WVR_GetTextureQueueLength(mRightEyeQ); i++) {
-        GLuint fbo = CreateGLFramebuffer((GLuint)WVR_GetTexture(mRightEyeQ, i).id);
+        GLuint fbo = CreateGLFramebuffer((GLuint)(size_t)WVR_GetTexture(mRightEyeQ, i).id);
         mRightEyeFBO.push_back(fbo);
     }
 
@@ -790,12 +790,20 @@ bool WaveCloudXRApp::UpdateFrame() {
                     LOGE("Error in LatchFrame [%0d] = %s", frameErr, cxrErrorString(frameErr));
             } else {
 
+                // If network condition is bad, e.g. bitrate usage down below ~5Mbps
+                // Frames received will vary frequently in size (~5 times in 1 second)
+                // and crash here due to no read/write protection
+
+                // You can add mutex to protect buffer recreation process and potentially increase latency
+                // or comment this function call to avoid crash caused by frequent size change
+                // Not recreating buffer to match incoming frame size might result in blurry display.
+                
                 if ( mFramesLatched.frames[0].widthFinal != mRenderWidth ||
                      mFramesLatched.frames[0].heightFinal != mRenderHeight ) {
                     LOGE("Receive frame %dx%d, buffer size %dx%d",
                          mFramesLatched.frames[0].widthFinal, mFramesLatched.frames[0].heightFinal,
                          mRenderWidth, mRenderHeight);
-                    RecreateFramebuffer(mFramesLatched.frames[0].widthFinal, mFramesLatched.frames[0].heightFinal);
+                    //RecreateFramebuffer(mFramesLatched.frames[0].widthFinal, mFramesLatched.frames[0].heightFinal);
                 }
             }
         }
@@ -1184,16 +1192,16 @@ void WaveCloudXRApp::HandleClientState(cxrClientState state, cxrStateReason reas
             mConnected = true;
             break;
         case cxrClientState_ConnectionAttemptFailed:
-            LOGE("Connection attempt failed. [%s]", cxrStateReasonString(reason));
+            LOGE("Connection attempt failed. Reason: [%d]", reason);
             state = cxrClientState_Disconnected;
             mConnected = false;
             break;
         case cxrClientState_Disconnected:
-            LOGE("Server disconnected with reason: [%s]", cxrStateReasonString(reason));
+            LOGE("Server disconnected with reason: [%d]", reason);
             mConnected = false;
             break;
         default:
-            LOGW("Client state updated: %s, reason: %s", cxrClientStateString(state), cxrStateReasonString(reason));
+            LOGW("Client state updated: %d to %d, reason: %d", mClientState, state, reason);
             break;
     }
 
