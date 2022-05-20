@@ -34,7 +34,7 @@ public:
     void shutdownCloudXR();
 
     bool handleInput();
-    void HandleCloudXRLifecycle(const bool pause);
+    bool HandleCloudXRLifecycle(const bool pause);
     void updatePose();
     bool renderFrame();
 
@@ -48,6 +48,11 @@ public:
     cxrBool RenderAudio(const cxrAudioFrame*);
     void HandleClientState(cxrClientState state, cxrStateReason reason);
 
+    /* CloudXR interfaces */
+    /*
+     * Send connection request to specified server IP
+     * */
+    bool Connect(const bool async = true);
 protected:
     void Pause();
     void Resume();
@@ -68,12 +73,6 @@ protected:
     bool InitCallbacks();
     bool InitDeviceDesc();
     bool InitReceiver();
-
-    /* CloudXR interfaces */
-    /*
-     * Send connection request to specified server IP
-     * */
-    bool Connect();
 
     /*
      * Fetch video frame from CloudXR server
@@ -109,11 +108,14 @@ private:
     cxrFramesLatched mFramesLatched{};
     cxrReceiverHandle mReceiver= nullptr;
     cxrDeviceDesc mDeviceDesc{};
-    cxrClientState mClientState = cxrClientState_ReadyToConnect;
-    cxrStateReason mClientStateReason = cxrStateReason_NoError;
     cxrClientCallbacks mClientCallbacks;
     cxrGraphicsContext mContext;
     CloudXR::ClientOptions mOptions;
+    cxrConnectionDesc mConnectionDesc = {};
+
+    bool mStateDirty = false;
+    cxrClientState mClientState = cxrClientState_ReadyToConnect;
+    cxrStateReason mClientStateReason = cxrStateReason_NoError;
 
     // Audio
     oboe::AudioStream* mPlaybackStream= nullptr;
@@ -126,9 +128,6 @@ private:
 
     bool mIs6DoFHMD = false;
     bool mIs6DoFController[2] = {false, false};
-   /* int32_t mButtonCaps[2] = {0,0};
-    int32_t mAnalogAxisCaps[2] = {0,0};
-    int32_t mTouchCaps[2] = {0,0};*/
 
     bool mConnected;
     bool mPaused;
@@ -144,6 +143,8 @@ private:
     uint32_t mRenderWidth;
     uint32_t mRenderHeight;
 
+    float mFrameInvalidTime = 0.0f;
+
     // Statistics
     float mTimeDiff;
     uint32_t mTimeAccumulator2S;  // add in micro second.
@@ -151,11 +152,5 @@ private:
     int mFrameCount = 0;
     float mFPS = 0;
     uint32_t mClockCount = 0;
-
-    //
-    void switchGazeTriggerType();
-
-    WVR_InteractionMode mInteractionMode;
-    WVR_GazeTriggerType mGazeTriggerType;
 
 };

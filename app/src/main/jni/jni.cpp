@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <wvr/wvr.h>
 
-bool gPaused = false;
+bool gPaused = true;
 
 int main(int argc, char *argv[]) {
 
@@ -24,22 +24,29 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    if (!app->initCloudXR()) {
+        app->shutdownGL();
+        app->shutdownVR();
+        app->shutdownCloudXR();
+        delete app;
+        return 1;
+    }
+
     while (1) {
-        if (app->initCloudXR()) {
-            app->HandleCloudXRLifecycle(gPaused);
-        }
-
-        if (app->handleInput())
+        if (!app->HandleCloudXRLifecycle(gPaused))
             break;
 
-        if (app->renderFrame()) {
-            LOGE("Stop streaming.");
+        if (!app->handleInput())
             break;
-        }
+
+        if (!app->renderFrame())
+            break;
 
         app->updatePose();
     }
 
+    LOGE("Stop streaming.");
+    LOGE("Shutting down components.");
     app->shutdownGL();
     app->shutdownVR();
     app->shutdownCloudXR();
@@ -49,7 +56,7 @@ int main(int argc, char *argv[]) {
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_htc_vr_samples_wavecloudxr_MainActivity_nativeInit(JNIEnv * env, jobject activityInstance, jobject assetManagerInstance) {
-    LOGI("register WVR main");
+    LOGI("Register WVR main");
     WVR_RegisterMain(main);
 }
 

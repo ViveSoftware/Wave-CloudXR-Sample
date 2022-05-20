@@ -18,6 +18,7 @@
 #include <wvr/wvr_system.h>
 #include <wvr/wvr_events.h>
 
+#include "CloudXRMatrixHelpers.h"
 #include "WaveCloudXRApp.h"
 
 // Return micro second.  Should always positive because now is bigger.
@@ -26,7 +27,7 @@
 
 #define VR_MAX_CLOCKS 200
 #define LATCHFRAME_TIMEOUT_MS 100 // timeout to fetch a frame from CloudXR server
-#define FRAME_TIMEOUT_SECOND 30.0f // exit program if no incoming frame for too long
+#define FRAME_TIMEOUT_SECOND 10.0f // retry connection if no valid frame or connection timeout
 
 WaveCloudXRApp::WaveCloudXRApp()
         : mTimeDiff(0.0f)
@@ -42,6 +43,7 @@ WaveCloudXRApp::WaveCloudXRApp()
         , mConnected(false)
         , mInited(false)
         , mPaused(true)
+        , mStateDirty(true)
         {}
 
 bool WaveCloudXRApp::initVR() {
@@ -102,16 +104,15 @@ bool WaveCloudXRApp::initVR() {
 
     // Init Wave Render
     WVR_RenderInitParams_t param;
-    param = { WVR_GraphicsApiType_OpenGL, WVR_RenderConfig_sRGB };
+    //param = { WVR_GraphicsApiType_OpenGL, WVR_RenderConfig_sRGB };
+    param = { WVR_GraphicsApiType_OpenGL, WVR_RenderConfig_Default };
 
     WVR_RenderError pError = WVR_RenderInit(&param);
     if (pError != WVR_RenderError_None) {
         LOGE("Present init failed - Error[%d]", pError);
     }
 
-    mInteractionMode = WVR_GetInteractionMode();
-    mGazeTriggerType = WVR_GetGazeTriggerType();
-    LOGI("initVR() mInteractionMode: %d, mGazeTriggerType: %d", mInteractionMode, mGazeTriggerType);
+    LOGI("initVR done");
     return true;
 }
 
@@ -171,28 +172,73 @@ void WaveCloudXRApp::shutdownVR() {
 }
 
 void WaveCloudXRApp::shutdownCloudXR() {
+
     if (mPlaybackStream)
     {
         mPlaybackStream->close();
+        mPlaybackStream = nullptr;
     }
 
     if (mRecordStream)
     {
         mRecordStream->close();
+        mRecordStream = nullptr;
     }
 
-    if (mReceiver)
-    {
+    if (mReceiver) {
         cxrDestroyReceiver(mReceiver);
         mReceiver = nullptr;
     }
+
+    mInited = false;
+    LOGE("ShutdownCloudXR done");
 }
 
-
-void WaveCloudXRApp::HandleCloudXRLifecycle(const bool pause)
+bool WaveCloudXRApp::HandleCloudXRLifecycle(const bool pause)
 {
-    if (pause) Pause();
-    else Resume();
+    if (mPaused != pause) {
+        if (pause) {
+            Pause();
+        } else {
+            Resume();
+        }
+    }
+
+    if (mStateDirty) {
+        switch (mClientState) {
+            case cxrClientState_ReadyToConnect:
+                LOGI("Client is ready to connect.");
+                Connect();
+                break;
+            case cxrClientState_Disconnected:
+                if (mClientStateReason == cxrStateReason_DisconnectedUnexpected ||
+                    mClientStateReason == cxrStateReason_DeviceDescriptorMismatch) {
+                    LOGE("Unexpected disconnection, reconnecting ... ");
+                    shutdownCloudXR();
+                    if (initCloudXR()) {
+                        Connect();
+                    } else {
+                        LOGE("Reinitialization failed. Exiting app.");
+                        return false;
+                    }
+                } else if (mClientStateReason == cxrStateReason_DisconnectedExpected) {
+                    LOGE("Disconnected from server, exiting app. ");
+                    return false;
+                } else {
+                    LOGE("Unrecoverable disconnection, exiting app. ");
+                    return false;
+                }
+                break;
+            case cxrClientState_Exiting:
+                return false;
+
+            default:
+                break;
+        }
+        mStateDirty = false;
+    }
+
+    return true;
 }
 
 
@@ -203,16 +249,9 @@ bool WaveCloudXRApp::handleInput() {
     // Process WVR events
     WVR_Event_t event;
     while(WVR_PollEventQueue(&event)) {
-        if (event.common.type == WVR_EventType_Quit) {
+        if(event.common.type == WVR_EventType_Quit) {
             shutdownCloudXR();
-            return true;
-        }
-
-        if (event.common.type == WVR_EventType_DeviceConnected) {
-            LOGI("WVR_EventType_DeviceConnected");
-        }
-        if (event.common.type == WVR_EventType_DeviceDisconnected) {
-            LOGI(" WVR_EventType_DeviceDisconnected)");
+            return false;
         }
 
         processVREvent(event);
@@ -222,7 +261,7 @@ bool WaveCloudXRApp::handleInput() {
     }
     UpdateAnalog();
 
-    return false;
+    return true;
 }
 
 void WaveCloudXRApp::ReleaseFramebuffers()
@@ -266,110 +305,56 @@ void WaveCloudXRApp::RecreateFramebuffer(const uint32_t width, const uint32_t he
     LOGD("Recreated buffer %dx%d", mRenderWidth, mRenderHeight);
 }
 
-void WaveCloudXRApp::switchGazeTriggerType() {
-    if (mGazeTriggerType == WVR_GazeTriggerType_Timeout) {
-        mGazeTriggerType = WVR_GazeTriggerType_Button;
-    } else if (mGazeTriggerType == WVR_GazeTriggerType_Button) {
-        mGazeTriggerType = WVR_GazeTriggerType_TimeoutButton;
-    } else if (mGazeTriggerType == WVR_GazeTriggerType_TimeoutButton) {
-        mGazeTriggerType = WVR_GazeTriggerType_Timeout;
-    }
-    LOGD("switchGazeTriggerType mGazeTriggerType: %d", mGazeTriggerType);
-    WVR_SetGazeTriggerType(mGazeTriggerType);
-}
-
 //-----------------------------------------------------------------------------
 // Purpose: Processes a single VR event
 //-----------------------------------------------------------------------------
 void WaveCloudXRApp::processVREvent(const WVR_Event_t & event) {
     switch(event.common.type) {
-    case WVR_EventType_DeviceConnected:
-        {
-
-        }
-        break;
-    case WVR_EventType_ButtonPressed:
-    case WVR_EventType_ButtonUnpressed:
-    case WVR_EventType_TouchTapped:
-    case WVR_EventType_TouchUntapped:
-        {
-
-        }
-        break;
-    case WVR_EventType_DeviceRoleChanged:
-        {
-
-        }
-        break;
-    case WVR_EventType_DeviceStatusUpdate:
-        {
-            LOGD("Device %u updated.\n", event.device.deviceType);
-
-        }
-        break;
     case WVR_EventType_IpdChanged:
         {
             WVR_RenderProps_t props;
             bool ret = WVR_GetRenderProps(&props);
             float ipd = 0;
             if (ret) {
-                ipd = props.ipdMeter;
+                mDeviceDesc.ipd = ipd; // used when re-init
+                mCXRPoseState.hmd.ipd = ipd; // updated along with pose
             }
-            LOGI("Receive WVR_EventType_IpdChanged mode = %d", ipd);
+            LOGI("Receive WVR_EventType_IpdChanged = %d", ipd);
         }
         break;
-    case WVR_EventType_InteractionModeChanged:
+    case WVR_EventType_RenderingToBePaused:
+    case WVR_EventType_DeviceSuspend:
         {
-            mInteractionMode = WVR_GetInteractionMode();
-            LOGI("Receive WVR_EventType_InteractionModeChanged mode = %d", mInteractionMode);
+            LOGE("Device %d suspended.", event.device.deviceType);
+            mPaused = true;
+            break;
         }
-        break;
-    case WVR_EventType_GazeTriggerTypeChanged:
+
+    case WVR_EventType_RenderingToBeResumed:
+    case WVR_EventType_DeviceResume:
         {
-            mGazeTriggerType = WVR_GetGazeTriggerType();
-            LOGI("Receive WVR_EventType_GazeTriggerTypeChanged type = %d", mGazeTriggerType);
+            LOGE("WVR Device %d resumed.", event.device.deviceType);
+            mPaused = false;
+            break;
         }
-        break;
-    // If WaveVR AQ have enabled with WVR_QualityStrategy_SendQualityEvent, you will receive
-    // the wvr recommendedQuality_Lower/Higher event based on rendering performance.
-    case WVR_EventType_RecommendedQuality_Lower:
-        {
-            /* Once you got this recommend event:
-             * 1. If your conetent rendering quality has already in the worst quality, you can ignore this event.
-             * 2. Or, you can adjust the rendering resolution lower gradually by re-create texture queue, disable MSAA, etc.
-             */
-            //LOGI("Get WVR_EventType_RecommendedQuality_Lower");
-        }
-        break;
-    case WVR_EventType_RecommendedQuality_Higher:
-        {
-            /* 1. Once you got this recommend event:
-             * 1. If your conetent rendering quality has already in the best quality, you can ignore this event.
-             * 2. Or, you can adjust the rendering resolution higher ASAP by re-create texture queue, enable MSAA, etc.
-             */
-            //LOGI("Get WVR_EventType_RecommendedQuality_Higher");
-        }
-        break;
+
     default:
         break;
     }
 }
-
 bool WaveCloudXRApp::renderFrame() {
     updateTime();
 
-    static float loadingTime = 0.0f;    
     bool frameValid = UpdateFrame();
-
     if (!frameValid) {
         // Exit program when no valid frame for too long
-        loadingTime += mTimeDiff;
-        if (loadingTime > FRAME_TIMEOUT_SECOND) {
-            LOGD("No valid frame for %f seconds", loadingTime);
-            return true;
+        mFrameInvalidTime += mTimeDiff;
+        if (mFrameInvalidTime > FRAME_TIMEOUT_SECOND) {
+            LOGD("No valid frame for %f seconds", mFrameInvalidTime);
+            return false;
         }
     } else {
-        loadingTime = 0.0f;
+        mFrameInvalidTime = 0.0f;
     }
 
     /*
@@ -419,7 +404,7 @@ bool WaveCloudXRApp::renderFrame() {
 
     usleep(1); // ?
 
-    return false;
+    return true;
 }
 
 void WaveCloudXRApp::updateTime() {
@@ -452,7 +437,6 @@ void WaveCloudXRApp::updatePose() {
     // Get all device poses at once but it's a blocking call
     // WVR_GetSyncPose(WVR_PoseOriginModel_OriginOnHead, mVRDevicePairs, WVR_DEVICE_COUNT_LEVEL_1);
 
-    // mutex?
     {
         WVR_PoseOriginModel pom = WVR_PoseOriginModel_OriginOnGround;
         // Returns immediately with latest pose
@@ -714,6 +698,10 @@ bool WaveCloudXRApp::InitReceiver() {
     mContext.type = cxrGraphicsContext_GLES;
     mContext.egl.display = eglGetCurrentDisplay();
     mContext.egl.context = eglGetCurrentContext();
+    if (mContext.egl.context == nullptr) {
+        LOGV("eglContext invalid");
+        return false;
+    }
 
     cxrReceiverDesc desc = { 0 };
     desc.requestedVersion = CLOUDXR_VERSION_DWORD;
@@ -723,7 +711,7 @@ bool WaveCloudXRApp::InitReceiver() {
     desc.shareContext = &mContext;
     desc.numStreams = 2;
     desc.receiverMode = cxrStreamingMode_XR;
-    desc.debugFlags = mOptions.mDebugFlags;
+    desc.debugFlags = mOptions.mDebugFlags | cxrDebugFlags_OutputLinearRGBColor;
     desc.logMaxSizeKB = CLOUDXR_LOG_MAX_DEFAULT;
     desc.logMaxAgeDays = CLOUDXR_LOG_MAX_DEFAULT;
     cxrError err = cxrCreateReceiver(&desc, &mReceiver);
@@ -733,10 +721,11 @@ bool WaveCloudXRApp::InitReceiver() {
         return false;
     }
 
+    LOGV("Receiver created!");
     return true;
 }
 
-bool WaveCloudXRApp::Connect() {
+bool WaveCloudXRApp::Connect(const bool async) {
 
     if (mConnected) {
         LOGE("Already connected");
@@ -753,17 +742,21 @@ bool WaveCloudXRApp::Connect() {
         return false;
     }
 
-    // try to establish connection
-    cxrError err = cxrConnect(mReceiver, mOptions.mServerIP.c_str(), cxrConnectionFlags_ConnectAsync);
-    if (err != cxrError_Success)
-    {
-        LOGE("Failed to sent connection request to %s. Error %d, %s.",
-             mOptions.mServerIP.c_str(), (int)err, cxrErrorString(err));
+    mConnectionDesc.async = async;
+    mConnectionDesc.maxVideoBitrateKbps = mOptions.mMaxVideoBitrate;
+    mConnectionDesc.clientNetwork = mOptions.mClientNetwork;
+    mConnectionDesc.topology = mOptions.mTopology;
+    cxrError err = cxrConnect(mReceiver, mOptions.mServerIP.c_str(), &mConnectionDesc);
+    std::string constr = async ? "Connection request sent" : "Connection" ;
+    if (err != cxrError_Success) {
+        LOGE("%s failed, %s. Error %d, %s.",
+             constr.c_str(),
+             mOptions.mServerIP.c_str(), (int) err, cxrErrorString(err));
         shutdownCloudXR();
         return false;
     }
 
-    LOGV("Connection request sent. %s", mOptions.mServerIP.c_str());
+    LOGV("%s success. %s", constr.c_str(), mOptions.mServerIP.c_str());
     return true;
 }
 
@@ -790,6 +783,7 @@ bool WaveCloudXRApp::UpdateFrame() {
                     LOGE("Error in LatchFrame [%0d] = %s", frameErr, cxrErrorString(frameErr));
             } else {
 
+                // CloudXR SDK 3.1.1:
                 // If network condition is bad, e.g. bitrate usage down below ~5Mbps
                 // Frames received will vary frequently in size (~5 times in 1 second)
                 // and crash here due to no read/write protection
@@ -797,12 +791,16 @@ bool WaveCloudXRApp::UpdateFrame() {
                 // You can add mutex to protect buffer recreation process and potentially increase latency
                 // or comment this function call to avoid crash caused by frequent size change
                 // Not recreating buffer to match incoming frame size might result in blurry display.
-                
+
+                // CloudXR SDK 3.2:
+                // Recreating frame buffer causes reconnection process failed after HMD idle/wakeup.
+                // Reason: cxrStateReason_DeviceDescriptorMismatch.
+
                 if ( mFramesLatched.frames[0].widthFinal != mRenderWidth ||
                      mFramesLatched.frames[0].heightFinal != mRenderHeight ) {
-                    LOGE("Receive frame %dx%d, buffer size %dx%d",
+                    /*LOGE("Receive frame %dx%d, buffer size %dx%d",
                          mFramesLatched.frames[0].widthFinal, mFramesLatched.frames[0].heightFinal,
-                         mRenderWidth, mRenderHeight);
+                         mRenderWidth, mRenderHeight);*/
                     //RecreateFramebuffer(mFramesLatched.frames[0].widthFinal, mFramesLatched.frames[0].heightFinal);
                 }
             }
@@ -817,13 +815,20 @@ bool WaveCloudXRApp::UpdateHMDPose(const WVR_PoseState_t hmdPose) {
         return false;
     }
 
-    // mutex
     {
+        if (mDeviceDesc.ipd != 0.0f)
+        {
+            // is this flag supposed to be cleared after CXR gets it?
+            mCXRPoseState.hmd.flags = cxrHmdTrackingFlags_HasIPD;
+            mCXRPoseState.hmd.ipd = mDeviceDesc.ipd;
+        }
+
         mCXRPoseState.hmd.pose.poseIsValid = hmdPose.isValidPose; //cxrTrue;
         mCXRPoseState.hmd.pose.deviceIsConnected = cxrTrue;
         mCXRPoseState.hmd.pose.trackingResult = cxrTrackingResult_Running_OK;
 
-        mCXRPoseState.hmd.pose.deviceToAbsoluteTracking = Convert(hmdPose.poseMatrix);
+        cxrMatrix34 mat = Convert(mHmdPose.poseMatrix);
+        cxrMatrixToVecQuat(&mat, &mCXRPoseState.hmd.pose.position, &mCXRPoseState.hmd.pose.rotation);
         mCXRPoseState.hmd.pose.velocity = Convert(hmdPose.velocity);
         mCXRPoseState.hmd.pose.angularVelocity = Convert(hmdPose.angularVelocity);
 
@@ -850,7 +855,8 @@ bool WaveCloudXRApp::UpdateDevicePose(const WVR_DeviceType type, const WVR_PoseS
             mCXRPoseState.controller[idx].pose.deviceIsConnected = cxrTrue;
             mCXRPoseState.controller[idx].pose.trackingResult = cxrTrackingResult_Running_OK;
 
-            mCXRPoseState.controller[idx].pose.deviceToAbsoluteTracking = Convert(ctrlPose.poseMatrix);
+            cxrMatrix34 mat = Convert(ctrlPose.poseMatrix);
+            cxrMatrixToVecQuat(&mat, &mCXRPoseState.controller[idx].pose.position, &mCXRPoseState.controller[idx].pose.rotation);
             mCXRPoseState.controller[idx].pose.velocity = Convert(ctrlPose.velocity);
             mCXRPoseState.controller[idx].pose.angularVelocity = Convert(ctrlPose.angularVelocity);
 
@@ -864,19 +870,6 @@ bool WaveCloudXRApp::UpdateDevicePose(const WVR_DeviceType type, const WVR_PoseS
         }
     }
     return true;
-
-    /*
-     * Unhandled devices
-        WVR_DeviceType_Camera                       = 4,
-        WVR_DeviceType_EyeTracking                  = 5,
-        WVR_DeviceType_HandGesture_Right            = 6,
-        WVR_DeviceType_HandGesture_Left             = 7,
-        WVR_DeviceType_NaturalHand_Right            = 8,
-        WVR_DeviceType_NaturalHand_Left             = 9,
-        WVR_DeviceType_ElectronicHand_Right         = 10,
-        WVR_DeviceType_ElectronicHand_Left          = 11,
-     */
-
 }
 
 bool WaveCloudXRApp::UpdateAnalog()
@@ -910,11 +903,6 @@ bool WaveCloudXRApp::UpdateAnalog()
                     {WVR_InputId_Alias1_Thumbstick, cxrAnalog_JoystickX},
             };
 
-    uint32_t inputType = WVR_InputType_Button | WVR_InputType_Touch | WVR_InputType_Analog;
-    uint32_t buttons = 0;
-    uint32_t touches = 0;
-    WVR_AnalogState_t analogState[3];
-
     for (auto controllerMap : controllerMaps)
     {
         auto& controller = mCXRPoseState.controller[controllerMap.cvrId];
@@ -924,11 +912,6 @@ bool WaveCloudXRApp::UpdateAnalog()
             if (!WVR_IsDeviceConnected(controllerMap.wvrId))
                 continue;
 
-            // old
-            // check if the axis available on this controller based on init query
-            const int axisIndex = WVR_DeviceType_Controller_Left - controllerMap.wvrId; // left is larger value!
-            //if (mAnalogAxisCaps[axisIndex] & (1<<axisMap.wvrId))
-            //{
                 auto axis = WVR_GetInputAnalogAxis(controllerMap.wvrId, axisMap.wvrId);
                 controller.scalarComps[axisMap.cvrId] = axis.x;
 
@@ -938,7 +921,6 @@ bool WaveCloudXRApp::UpdateAnalog()
                     controller.scalarComps[cxrAnalog_JoystickY] = axis.y;
                 if (axisMap.cvrId == cxrAnalog_Grip)
                     controller.scalarComps[cxrAnalog_Grip_Force] = axis.y;
-            //}
         }
     }
 
@@ -958,7 +940,7 @@ bool WaveCloudXRApp::Render(const uint32_t eye, WVR_TextureParams_t eyeTexture, 
         WVR_SubmitExtend ext = WVR_SubmitExtend_Default;
         WVR_SubmitFrame((WVR_Eye)eye, &eyeTexture, &mHmdPose, ext);
 
-        if (eye == (uint32_t)WVR_Eye_Right) {
+        if (eye == (uint32_t)WVR_Eye_Right && mReceiver && mConnected) {
             cxrReleaseFrame(mReceiver, &mFramesLatched);
         }
 
@@ -1118,12 +1100,11 @@ void WaveCloudXRApp::GetTrackingState(cxrVRTrackingState *trackingState) {
     if (mPaused || !mConnected || nullptr == trackingState)
         return;
 
-    // mutex?
     *trackingState = mCXRPoseState;
 }
 
 cxrBool WaveCloudXRApp::RenderAudio(const cxrAudioFrame *audioFrame) {
-    if (!mPlaybackStream)
+    if (!mPlaybackStream || !mInited || !mConnected)
     {
         return cxrFalse;
     }
@@ -1151,38 +1132,29 @@ void WaveCloudXRApp::TriggerHaptic(const cxrHapticFeedback *haptic) {
                          WVR_Intensity_Normal);
 }
 
-// Shutdown streaming if paused
 void WaveCloudXRApp::Pause() {
     if (!mPaused) {
         LOGW("Receive pause");
         mPaused = true;
-        mInited = false;
         shutdownCloudXR();
     } else {
         // already paused, skip
     }
 }
 
-// ReInit & Reconnect to server when resumed
 void WaveCloudXRApp::Resume() {
     if (mPaused) {
         LOGW("Receive resume");
-        if (initCloudXR()) {
-            Connect();
-            mPaused = false;
-        }
+        mPaused = false;
     } else {
-        // already resumed, skip
+        // already resumed
     }
 }
 
+// This is called from CloudXR thread
 void WaveCloudXRApp::HandleClientState(cxrClientState state, cxrStateReason reason) {
     switch (state)
     {
-        case cxrClientState_ReadyToConnect:
-            LOGW("Client is ready to connect.");
-            Connect();
-            break;
         case cxrClientState_ConnectionAttemptInProgress:
             LOGW("Connecting ...");
             mConnected = false;
@@ -1193,7 +1165,7 @@ void WaveCloudXRApp::HandleClientState(cxrClientState state, cxrStateReason reas
             break;
         case cxrClientState_ConnectionAttemptFailed:
             LOGE("Connection attempt failed. Reason: [%d]", reason);
-            state = cxrClientState_Disconnected;
+            state = cxrClientState_Disconnected; // retry connection
             mConnected = false;
             break;
         case cxrClientState_Disconnected:
@@ -1205,12 +1177,10 @@ void WaveCloudXRApp::HandleClientState(cxrClientState state, cxrStateReason reas
             break;
     }
 
-    // if disconnected, for now just reset to exiting state, and let other layers
-    // do the right thing to shut down.
-    if (state==cxrClientState_Disconnected)
-        state = cxrClientState_Exiting;
+    if (mClientState != state) {
+        mClientState = state;
+        mClientStateReason = reason;
 
-    // update the state of the app
-    mClientState = state;
-    mClientStateReason = reason;
+        mStateDirty = true;
+    }
 }
