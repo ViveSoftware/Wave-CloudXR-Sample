@@ -20,7 +20,7 @@ Below are the instructions to build from source. Alternatively you can find a pr
 ## Build Instructions
 1. Download [CloudXR SDK](https://developer.nvidia.com/nvidia-cloudxr-sdk) and [Google OBOE SDK 1.5.0](https://github.com/google/oboe/releases/tag/1.5.0).
 2. Put ***CloudXR.aar*** and ***oboe-1.5.0.aar*** in ***[ProjectRoot]/app/libs***
-3. Download Wave SDK and put in ***[ProjectRoot]/repo*** (paths can be modified in ***build_sdk.gradle***)
+3. Download Wave SDK, extract the zip file and copy the ***repo*** folder to ***[ProjectRoot]***, alongside with ***app*** and ***gradle*** folders (paths can be modified in ***build_sdk.gradle***)
 4. You are ready to build.
 
 ## Installation & Usage
