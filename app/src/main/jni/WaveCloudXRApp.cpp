@@ -641,7 +641,7 @@ bool WaveCloudXRApp::InitDeviceDesc() {
 
     mDeviceDesc.ctrlType = cxrControllerType_OculusTouch;
     mDeviceDesc.disablePosePrediction = false;
-    mDeviceDesc.angularVelocityInDeviceSpace = false;
+    mDeviceDesc.angularVelocityInDeviceSpace = true;
     mDeviceDesc.foveatedScaleFactor = (mOptions.mFoveation < 100) ? mOptions.mFoveation : 0;
 
     // Frustum
