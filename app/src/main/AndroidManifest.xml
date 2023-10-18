@@ -40,7 +40,7 @@
         <!--Set value “1” if your content only supports playing with one controler. -->
         <!--Set value “1,2” if your content supports playing with either one controler or two controlers. -->
         <!--Set value “0,1,2” if your content supports all cases, which mean user can play by gaze mode, one controller or two controllers. -->
-        <meta-data android:name="com.htc.vr.content.NumController" android:value="1,2"/>  <!--fill the value of how many controllers the application can support.-->
+        <meta-data android:name="com.htc.vr.content.NumController" android:value="0,1,2"/>  <!--fill the value of how many controllers the application can support.-->
 
         <meta-data android:name="minWaveSDKVersion" android:value="1" />
     </application>

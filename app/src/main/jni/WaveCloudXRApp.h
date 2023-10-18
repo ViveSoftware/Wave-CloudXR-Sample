@@ -3,6 +3,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <thread>
 
 #include <GLES3/gl31.h>
 
@@ -35,6 +36,8 @@ public:
 
     bool handleInput();
     bool HandleCloudXRLifecycle(const bool pause);
+    void beginPoseStream();
+    void stopPoseStream();
     void updatePose();
     bool renderFrame();
 
@@ -122,6 +125,9 @@ private:
     oboe::AudioStream* mRecordStream= nullptr;
 
     // Pose
+    std::mutex mPoseMutex;
+    std::thread *mPoseStream = nullptr;
+    bool mExitPoseStream = false;
     cxrVRTrackingState mCXRPoseState;
     WVR_PoseState_t mHmdPose;
     WVR_PoseState_t mCtrlPoses[2];

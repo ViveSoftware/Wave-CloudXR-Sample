@@ -8,7 +8,7 @@ android {
     defaultConfig {
         applicationId "com.htc.vr.samples.wavecloudxr"
         versionCode 3
-        versionName "1.2"
+        versionName "1.4"
     }
 
     signingConfigs {

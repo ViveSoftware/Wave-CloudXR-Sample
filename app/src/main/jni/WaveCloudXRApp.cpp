@@ -29,6 +29,7 @@
 #define LATCHFRAME_TIMEOUT_MS 100 // timeout to fetch a frame from CloudXR server
 #define FRAME_TIMEOUT_SECOND 10.0f // retry connection if no valid frame or connection timeout
 
+#define VERSION_CODE "v1.4"
 WaveCloudXRApp::WaveCloudXRApp()
         : mTimeDiff(0.0f)
         , mLeftEyeQ(nullptr)
@@ -47,6 +48,7 @@ WaveCloudXRApp::WaveCloudXRApp()
         {}
 
 bool WaveCloudXRApp::initVR() {
+    LOGI("Wave CloudXR Sample %s", VERSION_CODE);
 
     // Init WVR Runtime
     WVR_InitError eError = WVR_Init(WVR_AppType_VRContent);
@@ -432,11 +434,34 @@ void WaveCloudXRApp::updateTime() {
     }
 }
 
+void  WaveCloudXRApp::beginPoseStream() {
+    if (mPoseStream == nullptr) {
+        mPoseStream = new std::thread(&WaveCloudXRApp::updatePose, this);
+    }
+}
+
+void  WaveCloudXRApp::stopPoseStream() {
+    if(mPoseStream!=nullptr) {
+        mExitPoseStream = true;
+        if(mPoseStream->joinable()) {
+           mPoseStream->join();
+           delete mPoseStream;
+            mPoseStream = nullptr;
+        }
+    }
+}
+// 1 sec = 1,000ms = 1,000,000,000ns
 void WaveCloudXRApp::updatePose() {
+    // Update pose 250 per second by default
+    int deno = (mDeviceDesc.posePollFreq == 0) ? 250 : mDeviceDesc.posePollFreq;
+    long long int sleepNs = 1000000000 / deno;
+    LOGI("PoseStream Update per %lldns", sleepNs);
 
-    // Get all device poses at once but it's a blocking call
-    // WVR_GetSyncPose(WVR_PoseOriginModel_OriginOnHead, mVRDevicePairs, WVR_DEVICE_COUNT_LEVEL_1);
+    while (!mExitPoseStream) {
 
+        while (mInited && mConnected)
+        {
+            std::lock_guard<std::mutex> lock(mPoseMutex);
     {
         WVR_PoseOriginModel pom = WVR_PoseOriginModel_OriginOnGround;
         // Returns immediately with latest pose
@@ -451,6 +476,11 @@ void WaveCloudXRApp::updatePose() {
         WVR_GetPoseState(WVR_DeviceType_Controller_Right, pom, 0, &mCtrlPoses[1]);
         UpdateDevicePose(WVR_DeviceType_Controller_Right, mCtrlPoses[1]);
     }
+            std::this_thread::sleep_for(std::chrono::nanoseconds(sleepNs));
+        }
+    }
+
+    LOGI("PoseStream end");
 }
 
 /* CloudXR */
@@ -513,11 +543,11 @@ bool WaveCloudXRApp::LoadConfig() {
             ret = true;
             break;
         case ParseStatus_FileNotFound:
-            // LOGE("Config file not found.");
+            LOGE("Config file not found.");
         case ParseStatus_Fail:
         case ParseStatus_ExitRequested:
         case ParseStatus_BadVal:
-            // LOGE("Config file loading failed.");
+            LOGE("Config file loading failed.");
             ret = false;
             break;
         default:

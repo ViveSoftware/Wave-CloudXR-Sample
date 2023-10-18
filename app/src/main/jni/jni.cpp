@@ -32,6 +32,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    app->beginPoseStream();
     while (1) {
         if (!app->HandleCloudXRLifecycle(gPaused))
             break;
@@ -42,8 +43,9 @@ int main(int argc, char *argv[]) {
         if (!app->renderFrame())
             break;
 
-        app->updatePose();
+        // app->updatePose();
     }
+    app->stopPoseStream();
 
     LOGE("Stop streaming.");
     LOGE("Shutting down components.");
