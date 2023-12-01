@@ -8,7 +8,7 @@ Below are the instructions to build from source. Alternatively you can find a pr
 ## Requirements
 - HTC VIVE Focus 3
 - [Wave Native SDK 4.3.0](https://developer.vive.com/resources/vive-wave/download/latest/) or later
-- [CloudXR SDK 3.2](https://developer.nvidia.com/nvidia-cloudxr-sdk)
+- [CloudXR SDK 4.0](https://developer.nvidia.com/nvidia-cloudxr-sdk)
 - [Google OBOE SDK 1.5.0](https://github.com/google/oboe/releases/tag/1.5.0)
 - Android development environment
   - Android Studio 4.0 or later
