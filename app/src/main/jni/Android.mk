@@ -38,6 +38,7 @@ include $(CLEAR_VARS)
 LOCAL_MODULE    := WaveCloudXRJNI
 LOCAL_C_INCLUDES := $(COMMON_INCLUDES)
 LOCAL_SRC_FILES := $(COMMON_FILES)
+LOCAL_CPPFLAGS += -fexceptions
 LOCAL_LDLIBS    := -llog -ljnigraphics -landroid -lEGL -lGLESv3
 LOCAL_SHARED_LIBRARIES := wvr_api Oboe CloudXRClient
 include $(BUILD_SHARED_LIBRARY)

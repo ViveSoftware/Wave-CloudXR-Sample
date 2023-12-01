@@ -29,7 +29,78 @@
 #define LATCHFRAME_TIMEOUT_MS 100 // timeout to fetch a frame from CloudXR server
 #define FRAME_TIMEOUT_SECOND 10.0f // retry connection if no valid frame or connection timeout
 
-#define VERSION_CODE "v1.4"
+#define VERSION_CODE "v1.5"
+
+#define CASE(x) \
+case x:     \
+return #x
+
+const char* ClientStateEnumToString(cxrClientState state)
+{
+    switch (state)
+    {
+        CASE(cxrClientState_ReadyToConnect);
+        CASE(cxrClientState_ConnectionAttemptInProgress);
+        CASE(cxrClientState_ConnectionAttemptFailed);
+        CASE(cxrClientState_StreamingSessionInProgress);
+        CASE(cxrClientState_Disconnected);
+        CASE(cxrClientState_Exiting);
+        default:
+            return "";
+    }
+}
+#undef CASE
+static constexpr int inputTouchLegacyCount = 21;
+
+static const char* inputsTouchLegacy[inputTouchLegacyCount] =
+        {
+                "/input/system/click",
+                "/input/application_menu/click",
+                "/input/trigger/click",     // 2
+                "/input/trigger/touch",     // 3
+                "/input/trigger/value",     // 4
+                "/input/grip/click",        // 5
+                "/input/grip/touch",        // 6
+                "/input/grip/value",        // 7
+                "/input/joystick/click",    // 8
+                "/input/joystick/touch",    // 9
+                "/input/joystick/x",        // 10
+                "/input/joystick/y",        // 11
+                "/input/a/click",           // 12
+                "/input/b/click",           // 13
+                "/input/x/click",           // 14
+                "/input/y/click",           // 15
+                "/input/a/touch",           // 16
+                "/input/b/touch",           // 17
+                "/input/x/touch",           // 18
+                "/input/y/touch",           // 19
+                "/input/thumb_rest/touch",
+        };
+
+cxrInputValueType inputValuesTouchLegacy[inputTouchLegacyCount] =
+        {
+                cxrInputValueType_boolean, //input/system/click
+                cxrInputValueType_boolean, //input/application_menu/click
+                cxrInputValueType_boolean, //input/trigger/click
+                cxrInputValueType_boolean, //input/trigger/touch
+                cxrInputValueType_float32, //input/trigger/value
+                cxrInputValueType_boolean, //input/grip/click
+                cxrInputValueType_boolean, //input/grip/touch
+                cxrInputValueType_float32, //input/grip/value
+                cxrInputValueType_boolean, //input/joystick/click
+                cxrInputValueType_boolean, //input/joystick/touch
+                cxrInputValueType_float32, //input/joystick/x
+                cxrInputValueType_float32, //input/joystick/y
+                cxrInputValueType_boolean, //input/a/click
+                cxrInputValueType_boolean, //input/b/click
+                cxrInputValueType_boolean, //input/x/click
+                cxrInputValueType_boolean, //input/y/click
+                cxrInputValueType_boolean, //input/a/touch
+                cxrInputValueType_boolean, //input/b/touch
+                cxrInputValueType_boolean, //input/x/touch
+                cxrInputValueType_boolean, //input/y/touch
+                cxrInputValueType_boolean, //input/thumb_rest/touch
+        };
 WaveCloudXRApp::WaveCloudXRApp()
         : mTimeDiff(0.0f)
         , mLeftEyeQ(nullptr)
@@ -38,7 +109,6 @@ WaveCloudXRApp::WaveCloudXRApp()
         , mPlaybackStream(nullptr)
         , mRecordStream(nullptr)
         , mClientState(cxrClientState_ReadyToConnect)
-        , mClientStateReason(cxrStateReason_NoError)
         , mRenderWidth(1720)
         , mRenderHeight(1720)
         , mConnected(false)
@@ -89,8 +159,6 @@ bool WaveCloudXRApp::initVR() {
             {WVR_InputId_Alias1_Bumper, WVR_InputType_Button , WVR_AnalogType_None},
             {WVR_InputId_Alias1_A, WVR_InputType_Button, WVR_AnalogType_None},
             {WVR_InputId_Alias1_B, WVR_InputType_Button, WVR_AnalogType_None},
-            // {WVR_InputId_Alias1_X, WVR_InputType_Button, WVR_AnalogType_None},
-            // {WVR_InputId_Alias1_Y, WVR_InputType_Button, WVR_AnalogType_None},
             {WVR_InputId_Alias1_Back, WVR_InputType_Button, WVR_AnalogType_None},
             {WVR_InputId_Alias1_Enter, WVR_InputType_Button, WVR_AnalogType_None},
             {WVR_InputId_Alias1_Touchpad, WVR_InputType_Button | WVR_InputType_Touch | WVR_InputType_Analog, WVR_AnalogType_2D},
@@ -106,7 +174,6 @@ bool WaveCloudXRApp::initVR() {
 
     // Init Wave Render
     WVR_RenderInitParams_t param;
-    //param = { WVR_GraphicsApiType_OpenGL, WVR_RenderConfig_sRGB };
     param = { WVR_GraphicsApiType_OpenGL, WVR_RenderConfig_Default };
 
     WVR_RenderError pError = WVR_RenderInit(&param);
@@ -213,19 +280,16 @@ bool WaveCloudXRApp::HandleCloudXRLifecycle(const bool pause)
                 Connect();
                 break;
             case cxrClientState_Disconnected:
-                if (mClientStateReason == cxrStateReason_DisconnectedUnexpected ||
-                    mClientStateReason == cxrStateReason_DeviceDescriptorMismatch) {
-                    LOGE("Unexpected disconnection, reconnecting ... ");
+                if (mRetryConnCount < mMaxRetryConnCount) {
+                    LOGE("Disconnected, reconnecting ... %d", mRetryConnCount);
                     shutdownCloudXR();
                     if (initCloudXR()) {
+                        mRetryConnCount++;
                         Connect();
                     } else {
-                        LOGE("Reinitialization failed. Exiting app.");
+                        LOGE("Reinitialization failed, exiting app.");
                         return false;
                     }
-                } else if (mClientStateReason == cxrStateReason_DisconnectedExpected) {
-                    LOGE("Disconnected from server, exiting app. ");
-                    return false;
                 } else {
                     LOGE("Unrecoverable disconnection, exiting app. ");
                     return false;
@@ -257,8 +321,6 @@ bool WaveCloudXRApp::handleInput() {
         }
 
         processVREvent(event);
-
-        // Update input events to streaming server
         UpdateInput(event);
     }
     UpdateAnalog();
@@ -357,6 +419,8 @@ bool WaveCloudXRApp::renderFrame() {
         }
     } else {
         mFrameInvalidTime = 0.0f;
+
+        CheckStreamQuality();
     }
 
     /*
@@ -405,10 +469,11 @@ bool WaveCloudXRApp::renderFrame() {
     }
 
     usleep(1); // ?
-
     return true;
 }
 
+static uint updatePoseCount = 0;
+static uint getPoseCount = 0;
 void WaveCloudXRApp::updateTime() {
     // Process time variable.
     struct timeval now;
@@ -425,10 +490,12 @@ void WaveCloudXRApp::updateTime() {
     mTimeAccumulator2S += timeDiff;
     mRtcTime = now;
     mFrameCount++;
-    if (mTimeAccumulator2S > 2000000) {
+    if (mTimeAccumulator2S > 1000000) {
         mFPS = mFrameCount / (mTimeAccumulator2S / 1000000.0f);
-        LOGI("FPS %2.0f", mFPS);
+        LOGI("FPS %2.0f, UpdatePose: %d, GetPose: %d", mFPS, updatePoseCount, getPoseCount);
 
+        updatePoseCount = 0;
+        getPoseCount = 0;
         mFrameCount = 0;
         mTimeAccumulator2S = 0;
     }
@@ -462,20 +529,22 @@ void WaveCloudXRApp::updatePose() {
         while (mInited && mConnected)
         {
             std::lock_guard<std::mutex> lock(mPoseMutex);
-    {
-        WVR_PoseOriginModel pom = WVR_PoseOriginModel_OriginOnGround;
-        // Returns immediately with latest pose
-        WVR_GetPoseState(WVR_DeviceType_HMD, pom, 0, &mHmdPose);
-        UpdateHMDPose(mHmdPose);
+            {
+                WVR_PoseOriginModel pom = WVR_PoseOriginModel_OriginOnGround;
+                // Returns immediately with latest pose
+                WVR_GetPoseState(WVR_DeviceType_HMD, pom, 0, &mHmdPose);
+                UpdateHMDPose(mHmdPose);
 
-        pom = mIs6DoFHMD ? WVR_PoseOriginModel_OriginOnGround
-                         : WVR_PoseOriginModel_OriginOnHead_3DoF,
+                pom = mIs6DoFHMD ? WVR_PoseOriginModel_OriginOnGround
+                                 : WVR_PoseOriginModel_OriginOnHead_3DoF;
+
                 WVR_GetPoseState(WVR_DeviceType_Controller_Left, pom, 0, &mCtrlPoses[0]);
-        UpdateDevicePose(WVR_DeviceType_Controller_Left, mCtrlPoses[0]);
+                UpdateDevicePose(WVR_DeviceType_Controller_Left, mCtrlPoses[0]);
 
-        WVR_GetPoseState(WVR_DeviceType_Controller_Right, pom, 0, &mCtrlPoses[1]);
-        UpdateDevicePose(WVR_DeviceType_Controller_Right, mCtrlPoses[1]);
-    }
+                WVR_GetPoseState(WVR_DeviceType_Controller_Right, pom, 0, &mCtrlPoses[1]);
+                UpdateDevicePose(WVR_DeviceType_Controller_Right, mCtrlPoses[1]);
+                updatePoseCount++;
+            }
             std::this_thread::sleep_for(std::chrono::nanoseconds(sleepNs));
         }
     }
@@ -575,10 +644,37 @@ bool WaveCloudXRApp::InitCallbacks() {
     //    return reinterpret_cast<CloudXRStream*>(context)->ReceiveUserData(data, size);
     //};
 
-    mClientCallbacks.UpdateClientState = [](void* context, cxrClientState state, cxrStateReason reason)
+    mClientCallbacks.UpdateClientState = [](void* context, cxrClientState state, cxrError error)
     {
-        return reinterpret_cast<WaveCloudXRApp*>(context)->HandleClientState(state, reason);
+        return reinterpret_cast<WaveCloudXRApp*>(context)->HandleClientState(context, state, error);
     };
+
+    mClientCallbacks.LogMessage = [](void* context, cxrLogLevel level, cxrMessageCategory category, void* extra, const char* tag, const char* const messageText)
+    {
+        switch(level) {
+            case cxrLogLevel::cxrLL_Verbose:
+                //LOGV("[%s] %s", tag, messageText); // this opens up verbose decoder logging
+                break;
+            case cxrLogLevel::cxrLL_Info:
+                LOGI("[%s] %s", tag, messageText);
+                break;
+            case cxrLogLevel::cxrLL_Debug:
+                LOGD("[%s] %s", tag, messageText);
+                break;
+            case cxrLogLevel::cxrLL_Warning:
+                LOGW("[%s] %s", tag, messageText);
+                break;
+            case cxrLogLevel::cxrLL_Critical:
+            case cxrLogLevel::cxrLL_Error:
+                LOGE("[%s] %s", tag, messageText);
+                break;
+            default:
+                //LOGI("[%s] %s", tag, messageText);
+                break;
+        }
+    };
+
+    mClientCallbacks.clientContext = this;
 
     return true;
 }
@@ -655,24 +751,27 @@ bool WaveCloudXRApp::InitDeviceDesc() {
     WVR_RenderProps_t props;
     WVR_GetRenderProps(&props);
 
-    mDeviceDesc.deliveryType = cxrDeliveryType_Stereo_RGB;
+    mDeviceDesc.numVideoStreamDescs = CXR_NUM_VIDEO_STREAMS_XR;
+    for (uint32_t i = 0; i < mDeviceDesc.numVideoStreamDescs; i++) {
+        mDeviceDesc.videoStreamDescs[i].format = cxrClientSurfaceFormat_RGB;
+        mDeviceDesc.videoStreamDescs[i].width = mRenderWidth;
+        mDeviceDesc.videoStreamDescs[i].height = mRenderHeight;
+        mDeviceDesc.videoStreamDescs[i].fps = props.refreshRate;
+        mDeviceDesc.videoStreamDescs[i].maxBitrate = mOptions.mMaxVideoBitrate;
+    }
 
+    mDeviceDesc.stereoDisplay = true;
     mDeviceDesc.maxResFactor = mOptions.mMaxResFactor;
 
-    // checkme: these are not getting updated after resizing
-    mDeviceDesc.height = mRenderHeight;
-    mDeviceDesc.width = mRenderWidth;
-
-    mDeviceDesc.fps = props.refreshRate;
     mDeviceDesc.ipd = props.ipdMeter;
     mDeviceDesc.receiveAudio = mOptions.mReceiveAudio;
     mDeviceDesc.sendAudio = mOptions.mSendAudio;
     mDeviceDesc.posePollFreq = 0;
 
-    mDeviceDesc.ctrlType = cxrControllerType_OculusTouch;
     mDeviceDesc.disablePosePrediction = false;
     mDeviceDesc.angularVelocityInDeviceSpace = true;
     mDeviceDesc.foveatedScaleFactor = (mOptions.mFoveation < 100) ? mOptions.mFoveation : 0;
+    mDeviceDesc.disableVVSync = false;
 
     // Frustum
     float l,r,t,b;
@@ -710,11 +809,15 @@ bool WaveCloudXRApp::InitDeviceDesc() {
         mDeviceDesc.chaperone.playArea.v[1] = 1.0f;
     }
 
-    LOGI("Device property: IPD: %f, FPS: %f, display %dx%d, play area %.2fx%.2f\n",
-         mDeviceDesc.ipd, mDeviceDesc.fps,
-         mDeviceDesc.width, mDeviceDesc.height,
+    LOGI("Device property stream#0: IPD: %f, FPS: %f, display %dx%d, play area %.2fx%.2f\n",
+         mDeviceDesc.ipd, mDeviceDesc.videoStreamDescs[0].fps,
+         mDeviceDesc.videoStreamDescs[0].width, mDeviceDesc.videoStreamDescs[0].height,
          mDeviceDesc.chaperone.playArea.v[0], mDeviceDesc.chaperone.playArea.v[1]);
 
+    LOGI("Device property stream#1: IPD: %f, FPS: %f, display %dx%d, play area %.2fx%.2f\n",
+         mDeviceDesc.ipd, mDeviceDesc.videoStreamDescs[1].fps,
+         mDeviceDesc.videoStreamDescs[1].width, mDeviceDesc.videoStreamDescs[1].height,
+         mDeviceDesc.chaperone.playArea.v[0], mDeviceDesc.chaperone.playArea.v[1]);
     return true;
 }
 
@@ -737,13 +840,12 @@ bool WaveCloudXRApp::InitReceiver() {
     desc.requestedVersion = CLOUDXR_VERSION_DWORD;
     desc.deviceDesc = mDeviceDesc;
     desc.clientCallbacks = mClientCallbacks;
-    desc.clientContext = this;
     desc.shareContext = &mContext;
-    desc.numStreams = 2;
-    desc.receiverMode = cxrStreamingMode_XR;
     desc.debugFlags = mOptions.mDebugFlags | cxrDebugFlags_OutputLinearRGBColor;
     desc.logMaxSizeKB = CLOUDXR_LOG_MAX_DEFAULT;
     desc.logMaxAgeDays = CLOUDXR_LOG_MAX_DEFAULT;
+    strncpy(desc.appOutputPath, "sdcard/CloudXR/logs/", CXR_MAX_PATH - 1); // log file path
+    desc.appOutputPath[CXR_MAX_PATH-1] = 0; // ensure null terminated if string was too long.
     cxrError err = cxrCreateReceiver(&desc, &mReceiver);
     if (err != cxrError_Success)
     {
@@ -773,7 +875,7 @@ bool WaveCloudXRApp::Connect(const bool async) {
     }
 
     mConnectionDesc.async = async;
-    mConnectionDesc.maxVideoBitrateKbps = mOptions.mMaxVideoBitrate;
+    mConnectionDesc.useL4S = mOptions.mUseL4S; // Low Latency, Low Loss, and Scalable Throughput
     mConnectionDesc.clientNetwork = mOptions.mClientNetwork;
     mConnectionDesc.topology = mOptions.mTopology;
     cxrError err = cxrConnect(mReceiver, mOptions.mServerIP.c_str(), &mConnectionDesc);
@@ -809,6 +911,8 @@ bool WaveCloudXRApp::UpdateFrame() {
             {
                 if (frameErr == cxrError_Frame_Not_Ready)
                     LOGW("LatchFrame failed, frame not ready for %d ms", LATCHFRAME_TIMEOUT_MS);
+                else if (frameErr == cxrError_Not_Connected)
+                    LOGW("LatchFrame failed, receiver no longer connected.");
                 else
                     LOGE("Error in LatchFrame [%0d] = %s", frameErr, cxrErrorString(frameErr));
             } else {
@@ -873,7 +977,6 @@ bool WaveCloudXRApp::UpdateDevicePose(const WVR_DeviceType type, const WVR_PoseS
         return false;
     }
 
-    // mutex
     {
         size_t idx = type == WVR_DeviceType_Controller_Left ? 0 : 1;
         if (!WVR_IsDeviceConnected(type))
@@ -889,14 +992,6 @@ bool WaveCloudXRApp::UpdateDevicePose(const WVR_DeviceType type, const WVR_PoseS
             cxrMatrixToVecQuat(&mat, &mCXRPoseState.controller[idx].pose.position, &mCXRPoseState.controller[idx].pose.rotation);
             mCXRPoseState.controller[idx].pose.velocity = Convert(ctrlPose.velocity);
             mCXRPoseState.controller[idx].pose.angularVelocity = Convert(ctrlPose.angularVelocity);
-
-            // Do not report buttons in case if input is captured by the system
-            if (WVR_IsInputFocusCapturedBySystem())
-            {
-                mCXRPoseState.controller[idx].booleanComps = 0;
-                mCXRPoseState.controller[idx].booleanCompsChanged = 0;
-                memset(mCXRPoseState.controller[idx].scalarComps, 0, sizeof(mCXRPoseState.controller[idx].scalarComps));
-            }
         }
     }
     return true;
@@ -908,51 +1003,79 @@ bool WaveCloudXRApp::UpdateAnalog()
         return false;
     }
 
-    // Analog axis handling. Buttons will be handled in UpdateInput()
-    const struct
-    {
-        WVR_DeviceType wvrId;
-        cxrControllerId cvrId;
+    if (!mConnected) {
+        return false;
     }
-            controllerMaps[] =
-            {
-                    {WVR_DeviceType_Controller_Left, cxrController_Left},
-                    {WVR_DeviceType_Controller_Right, cxrController_Right}
-            };
 
-    const struct
-    {
-        WVR_InputId wvrId;
-        cxrAnalogId cvrId;
-    }
-            axisMaps[] =
-            {
-                    {WVR_InputId_Alias1_Touchpad, cxrAnalog_TouchpadX},
-                    {WVR_InputId_Alias1_Trigger, cxrAnalog_Trigger},
-                    {WVR_InputId_Alias1_Grip, cxrAnalog_Grip},
-                    {WVR_InputId_Alias1_Thumbstick, cxrAnalog_JoystickX},
-            };
+    for(size_t hand = HAND_LEFT; hand <= HAND_RIGHT; ++hand) {
 
-    for (auto controllerMap : controllerMaps)
-    {
-        auto& controller = mCXRPoseState.controller[controllerMap.cvrId];
+        WVR_DeviceType ctl = (hand == HAND_LEFT) ?
+                             WVR_DeviceType_Controller_Left : WVR_DeviceType_Controller_Right;
 
-        for (auto axisMap : axisMaps)
-        {
-            if (!WVR_IsDeviceConnected(controllerMap.wvrId))
-                continue;
-
-                auto axis = WVR_GetInputAnalogAxis(controllerMap.wvrId, axisMap.wvrId);
-                controller.scalarComps[axisMap.cvrId] = axis.x;
-
-                if (axisMap.cvrId == cxrAnalog_TouchpadX)
-                    controller.scalarComps[cxrAnalog_TouchpadY] = axis.y;
-                if (axisMap.cvrId == cxrAnalog_JoystickX)
-                    controller.scalarComps[cxrAnalog_JoystickY] = axis.y;
-                if (axisMap.cvrId == cxrAnalog_Grip)
-                    controller.scalarComps[cxrAnalog_Grip_Force] = axis.y;
+        if(!WVR_IsDeviceConnected(ctl)) {
+            continue;
         }
+
+        uint32_t inputType = WVR_InputType_Button | WVR_InputType_Touch | WVR_InputType_Analog;
+        uint32_t buttons = 0;
+        uint32_t touches = 0;
+        WVR_AnalogState_t analogState[3];
+        uint32_t analogCount = (uint32_t)WVR_GetInputTypeCount(ctl, WVR_InputType_Analog);
+        if (!WVR_GetInputDeviceState(ctl, inputType, &buttons, &touches, analogState, analogCount)) {
+            continue;
+        }
+        int stateCount = sizeof(analogState) / sizeof(WVR_AnalogState_t);
+
+        for(size_t buttonType = IDX_TRIGGER; buttonType <= IDX_THUMBSTICK; ++buttonType) {
+            if (mUpdateAnalogs[hand][buttonType]) {
+                for(int i = 0; i < stateCount; i++) {
+                    if(analogState[i].id == WVR_InputId_Alias1_Trigger ||
+                       analogState[i].id == WVR_InputId_Alias1_Grip) {
+                        cxrControllerEvent &e = mCTLEvents[hand][mCTLEventCount[hand]];
+                        e.inputValue.valueType = cxrInputValueType_float32;
+                        // e.clientTimeNS = event.device.common.timestamp;
+                        e.clientInputIndex = GetAnalogInputIndex(true, analogState[i].id);
+                        e.inputValue.vF32 = analogState[i].axis.x;
+                        mCTLEventCount[hand]++;
+
+                        /*LOGE("[UpdateInput] %s, WVRInputId %d, %s, Analog %f, Timestamp %lu",
+                             hand == HAND_LEFT ? "LEFT" : "RIGHT", analogState[i].id,
+                             inputsTouchLegacy[e.clientInputIndex], e.inputValue.vF32, e.clientTimeNS);*/
+                    } else if (analogState[i].id == WVR_InputId_Alias1_Thumbstick) {
+                        cxrControllerEvent &e = mCTLEvents[hand][mCTLEventCount[hand]];
+                        e.inputValue.valueType = cxrInputValueType_float32;
+                        // e.clientTimeNS = event.device.common.timestamp;
+                        e.clientInputIndex = 10; // "/input/joystick/x"
+                        e.inputValue.vF32 = analogState[i].axis.x;
+                        mCTLEventCount[hand]++;
+
+                        cxrControllerEvent &e2 = mCTLEvents[hand][mCTLEventCount[hand]];
+                        e2.inputValue.valueType = cxrInputValueType_float32;
+                        // e.clientTimeNS = event.device.common.timestamp;
+                        e2.clientInputIndex = 11; // "/input/joystick/y"
+                        e2.inputValue.vF32 = analogState[i].axis.y;
+                        mCTLEventCount[hand]++;
+
+                        /*LOGE("[UpdateInput] %s, WVRInputId %d, %s, Analog (%f, %f), Timestamp %lu",
+                             hand == HAND_LEFT ? "LEFT" : "RIGHT", analogState[i].id,
+                             inputsTouchLegacy[e.clientInputIndex], e.inputValue.vF32, e2.inputValue.vF32 , e.clientTimeNS);*/
+                    }
+                }
+
+            }
+        }
+
+        if (mCTLEventCount[hand] > 0) {
+            cxrError err = cxrFireControllerEvents(mReceiver, mControllers[hand], mCTLEvents[hand], mCTLEventCount[hand]);
+            if (err != cxrError_Success)
+            {
+                LOGE("[UpdateInput] cxrFireControllerEvents failed: %s", cxrErrorString(err));
+
+            }
+        }
+        mCTLEventCount[hand] = 0;
     }
+
 
     return true;
 }
@@ -997,119 +1120,133 @@ bool WaveCloudXRApp::Render(const uint32_t eye, WVR_TextureParams_t eyeTexture, 
     return true;
 }
 
+// Fire 1 input event once at a time
+// checkme: update all button states at fixed freq and fire all button event at once
 bool WaveCloudXRApp::UpdateInput(const WVR_Event_t& event)
 {
     if (mPaused || !mInited) {
         return false;
     }
 
-    // filter out non-controller events
-    if (event.common.type < WVR_EventType_ButtonPressed || event.common.type > WVR_EventType_UpToDownSwipe) {
+    if (!mConnected) {
         return false;
     }
 
-    const static WvrCxrButtonMapping WCButtonRemaps[] =
-            {
-                    { WVR_InputId_Alias1_Menu, cxrButton_ApplicationMenu, "Menu" },
-                    { WVR_InputId_Alias1_Trigger, cxrButton_Trigger_Click, "Trigger" },
-                    { WVR_InputId_Alias1_Grip, cxrButton_Grip_Click, "Grip" },
-                    { WVR_InputId_Alias1_Touchpad, cxrButton_Touchpad_Click, "Touchpad" },
-                    { WVR_InputId_Alias1_Thumbstick, cxrButton_Joystick_Click, "Thumb" },
-                    { WVR_InputId_Alias1_A, cxrButton_A, "A" },
-                    { WVR_InputId_Alias1_B, cxrButton_B, "B" },
-                    { WVR_InputId_Alias1_X, cxrButton_X, "X" },
-                    { WVR_InputId_Alias1_Y, cxrButton_Y, "Y" },
-            };
+    // filter out non-controller mCTLEvents
+    /*if (event.common.type < WVR_EventType_ButtonPressed || event.common.type > WVR_EventType_UpToDownSwipe) {
+        return false;
+    }*/
 
-    const size_t totalRemaps = sizeof(WCButtonRemaps)/sizeof(*WCButtonRemaps);
-
-    uint32_t idx = (event.device.deviceType == WVR_DeviceType_Controller_Left) ? 0 : 1;
-    auto& controllerState = mCXRPoseState.controller[idx];
-
-    uint64_t inputMask = 0;
-    const uint64_t prevComps = controllerState.booleanComps;
-    int setSize = totalRemaps;
-
-    bool handled = HandleButtonRemap(idx, controllerState, inputMask,
-                                     event.input.inputId, event.common.type, WCButtonRemaps, setSize,
-                                     (idx==0));
-    if (!handled) return true;
-
-    if (prevComps != controllerState.booleanComps)
-        controllerState.booleanCompsChanged |= inputMask;
-    else
-        controllerState.booleanCompsChanged &= ~inputMask;
-
-    return true;
-}
-
-bool WaveCloudXRApp::HandleButtonRemap(uint32_t idx, cxrControllerTrackingState &ctl, uint64_t &inputMask,
-                                      WVR_InputId inId, WVR_EventType evType, const WvrCxrButtonMapping mappingSet[], int mapSize, bool left6dof=false)
-{
-    for(int i=0; i<mapSize; i++)
-    {
-        const WvrCxrButtonMapping &map = mappingSet[i];
-        if (inId != map.wvrId) continue;
-
-        inputMask = 1ULL << map.cxrId;
-        // map left controller menu button to SteamVR system menu
-        if (left6dof && map.cxrId == cxrButton_ApplicationMenu)
-            inputMask = 1ULL << cxrButton_System;
-
-        if (evType==WVR_EventType_ButtonPressed)
-        {
-            ctl.booleanComps |= inputMask;
-            if (map.cxrId == cxrButton_Trigger_Click &&
-                map.wvrId == WVR_InputId_Alias1_Trigger)
-                ctl.scalarComps[cxrAnalog_Trigger] = 1.0f;
-        }
-        else if (evType==WVR_EventType_ButtonUnpressed)
-        {
-            ctl.booleanComps &= ~inputMask;
-            if (map.cxrId == cxrButton_Trigger_Click &&
-                map.wvrId == WVR_InputId_Alias1_Trigger)
-                ctl.scalarComps[cxrAnalog_Trigger] = 0.0f;
-        }
-        else if (evType==WVR_EventType_TouchTapped)
-        {
-            inputMask = 0;
-            if (map.wvrId == WVR_InputId_Alias1_Touchpad)
-                inputMask = 1 << cxrButton_Touchpad_Touch;
-            else if (map.wvrId == WVR_InputId_Alias1_Trigger)
-                inputMask = 1 << cxrButton_Trigger_Touch;
-            else if (map.wvrId == WVR_InputId_Alias1_Thumbstick)
-                inputMask = 1 << cxrButton_Joystick_Touch;
-
-            if (inputMask)
-            {
-                ctl.booleanComps |= inputMask;
-            }
-        }
-        else if (evType==WVR_EventType_TouchUntapped && map.cxrId==cxrButton_Touchpad_Click)
-        {
-            inputMask = 0;
-            if (map.wvrId == WVR_InputId_Alias1_Touchpad)
-                inputMask = 1 << cxrButton_Touchpad_Touch;
-            else if (map.wvrId == WVR_InputId_Alias1_Trigger)
-                inputMask = 1 << cxrButton_Trigger_Touch;
-            else if (map.wvrId == WVR_InputId_Alias1_Thumbstick)
-                inputMask = 1 << cxrButton_Joystick_Touch;
-
-            if (inputMask)
-                ctl.booleanComps &= ~inputMask;
-        }
-        else
-            return false; // we don't handle whatever it was!
-
-#ifdef DEBUG_LOGGING
-        LOGV("#> btn %s [%d], type=%d, state change %s {%llx}", map.nameStr, map.cxrId, evType,
-             active ? "ACTIVE" : "inactive", ctl.booleanComps);
-#endif
-
-        return true;
+    WVR_DeviceType ctl = event.device.deviceType;
+    if (ctl != WVR_DeviceType_Controller_Left && ctl != WVR_DeviceType_Controller_Right) {
+        return false;
     }
 
-    return false;
+    uint8_t hand = (ctl == WVR_DeviceType_Controller_Left) ? HAND_LEFT : HAND_RIGHT;
+    // Create CXR controller handle
+    if (mControllers[hand] == nullptr) {
+        if (!WVR_IsDeviceConnected(ctl)) {
+            // device disconnected but have input event incoming?
+            // continue;
+            return false;
+        }
+
+        cxrControllerDesc desc = {};
+        desc.id = ctl;
+        desc.role = (hand == HAND_LEFT) ?
+                    "cxr://input/hand/left" : "cxr://input/hand/right";
+        desc.controllerName = "Oculus Touch";
+        //desc.controllerName = "vive_focus3_controller"; // CXR server does not recognize this name
+        // desc.controllerName = "VIVE FOCUS 3 Controller";
+        desc.inputCount = inputTouchLegacyCount;
+        desc.inputPaths = inputsTouchLegacy;
+        desc.inputValueTypes = inputValuesTouchLegacy;
+        cxrError e = cxrAddController(mReceiver, &desc, &mControllers[hand]);
+        if (e!=cxrError_Success)
+        {
+            LOGE("[UpdateInput] Error adding controller: %s", cxrErrorString(e));
+            //continue;
+            return false;
+        }
+        LOGE("[UpdateInput] Added controller %s, %s", desc.controllerName, desc.role);
+    } else {
+        // Controller handle exist but device is actually disconnected
+        if (!WVR_IsDeviceConnected(ctl)) {
+            LOGE("[UpdateInput] Device %d is disconnected.", ctl);
+            // destroy controller handle
+        }
+    }
+
+    // button
+    cxrControllerEvent &e = mCTLEvents[hand][mCTLEventCount[hand]];
+    bool updateAnalog = true;
+    switch (event.common.type) {
+        case WVR_EventType_TouchTapped:{
+            e.inputValue.vBool = cxrTrue;
+            e.clientInputIndex = GetTouchInputIndex(true, event.input.inputId);
+            break;
+        }
+        case WVR_EventType_TouchUntapped:{
+            e.inputValue.vBool = cxrFalse;
+            e.clientInputIndex = GetTouchInputIndex(false, event.input.inputId);
+            break;
+        }
+        case WVR_EventType_ButtonPressed:{
+            e.inputValue.vBool = cxrTrue;
+            e.clientInputIndex = GetPressInputIndex(hand, true, event.input.inputId);
+            break;
+        }
+        case WVR_EventType_ButtonUnpressed:{
+            e.inputValue.vBool = cxrFalse;
+            e.clientInputIndex = GetPressInputIndex(hand, false, event.input.inputId);
+            break;
+        }
+        default:
+            updateAnalog = false;
+            break;
+    }
+
+    if (e.clientInputIndex >= inputTouchLegacyCount) {
+        // skip unbinded input
+        LOGE("[UpdateInput] skip unbinded input %s, WVRInputId %d, CXRInputIndex %d",
+             hand == HAND_LEFT ? "LEFT" : "RIGHT", event.input.inputId,
+             e.clientInputIndex);
+        return false;
+    }
+
+    e.clientTimeNS = event.device.common.timestamp;
+    e.inputValue.valueType = cxrInputValueType_boolean;
+    mCTLEventCount[hand]++;
+
+    // analog flag
+    switch(event.input.inputId) {
+        case WVR_InputId_Alias1_Trigger:
+            mUpdateAnalogs[hand][IDX_TRIGGER] = updateAnalog;
+            break;
+        case WVR_InputId_Alias1_Grip:
+            mUpdateAnalogs[hand][IDX_GRIP] = updateAnalog;
+            break;
+        case WVR_InputId_Alias1_Thumbstick:
+            mUpdateAnalogs[hand][IDX_THUMBSTICK] = updateAnalog;
+            break;
+        default:
+            break;
+    }
+
+    if (mCTLEventCount[hand] > 0) {
+        cxrError err = cxrFireControllerEvents(mReceiver, mControllers[hand], mCTLEvents[hand], mCTLEventCount[hand]);
+        /*LOGE("[UpdateInput] %s, WVRInputId %d, %s, %d, Timestamp %lu",
+             hand == HAND_LEFT ? "LEFT" : "RIGHT", event.input.inputId,
+             inputsTouchLegacy[e.clientInputIndex], e.inputValue.vBool, e.clientTimeNS);*/
+        if (err != cxrError_Success)
+        {
+            LOGE("[UpdateInput] cxrFireControllerEvents failed: %s", cxrErrorString(err));
+            // TODO: how to handle UNUSUAL API errors? might just return up.
+        }
+    }
+    mCTLEventCount[hand] = 0;
+
+    return true;
 }
 
 /*
@@ -1130,7 +1267,10 @@ void WaveCloudXRApp::GetTrackingState(cxrVRTrackingState *trackingState) {
     if (mPaused || !mConnected || nullptr == trackingState)
         return;
 
+    // std::lock_guard<std::mutex> lock(mPoseMutex);
     *trackingState = mCXRPoseState;
+
+    getPoseCount++;
 }
 
 cxrBool WaveCloudXRApp::RenderAudio(const cxrAudioFrame *audioFrame) {
@@ -1156,7 +1296,9 @@ void WaveCloudXRApp::TriggerHaptic(const cxrHapticFeedback *haptic) {
     if (haptic->seconds <= 0)
         return;
 
-    WVR_TriggerVibration(haptic->controllerIdx == 0 ?
+    // deviceID is not necessary VR controller, can be gamepad or anything
+    // need to map this ID to WVR Device
+    WVR_TriggerVibration(haptic->deviceID == 0 ?
                          WVR_DeviceType_Controller_Left : WVR_DeviceType_Controller_Right,
                          WVR_InputId_Max, static_cast<uint32_t>(haptic->seconds*1000000), 1,
                          WVR_Intensity_Normal);
@@ -1182,35 +1324,186 @@ void WaveCloudXRApp::Resume() {
 }
 
 // This is called from CloudXR thread
-void WaveCloudXRApp::HandleClientState(cxrClientState state, cxrStateReason reason) {
+void WaveCloudXRApp::HandleClientState(void* context, cxrClientState state, cxrError error) {
     switch (state)
     {
         case cxrClientState_ConnectionAttemptInProgress:
-            LOGW("Connecting ...");
+            LOGW("Connection attempt in progress.");
             mConnected = false;
             break;
         case cxrClientState_StreamingSessionInProgress:
-            LOGW("Connection established.");
+            LOGW("Connection attempt succeeded.");
             mConnected = true;
             break;
         case cxrClientState_ConnectionAttemptFailed:
-            LOGE("Connection attempt failed. Reason: [%d]", reason);
+            LOGE("Connection attempt failed with error: %s", cxrErrorString(error));
             state = cxrClientState_Disconnected; // retry connection
             mConnected = false;
             break;
         case cxrClientState_Disconnected:
-            LOGE("Server disconnected with reason: [%d]", reason);
+            LOGE("Server disconnected with error: [%s]", cxrErrorString(error));
             mConnected = false;
             break;
         default:
-            LOGW("Client state updated: %d to %d, reason: %d", mClientState, state, reason);
+            LOGW("Client state updated: %s to %s, reason: %s", ClientStateEnumToString(mClientState), ClientStateEnumToString(state), cxrErrorString(error));
             break;
     }
 
     if (mClientState != state) {
         mClientState = state;
-        mClientStateReason = reason;
 
         mStateDirty = true;
     }
 }
+
+uint16_t WaveCloudXRApp::GetTouchInputIndex(const bool touched, const WVR_InputId wvrInputId) {
+
+    uint16_t ret = 999;
+    switch(wvrInputId) {
+        case WVR_InputId_Alias1_Thumbstick:
+            ret = 9; // "/input/joystick/touch"
+            break;
+        case WVR_InputId_Alias1_Trigger:
+            ret = 3; // "/input/trigger/touch"
+            break;
+        case WVR_InputId_Alias1_Grip:
+            ret = 6; // "/input/grip/touch"
+            break;
+        case WVR_InputId_Alias1_A:
+            ret = 16; // "/input/a/touch"
+            break;
+        case WVR_InputId_Alias1_B:
+            ret = 17; // "/input/b/touch"
+            break;
+        case WVR_InputId_Alias1_X:
+            ret = 18; // "/input/x/touch"
+            break;
+        case WVR_InputId_Alias1_Y:
+            ret = 19; // "/input/y/touch"
+            break;
+        //case WVR_InputId_Alias1_Menu:
+        //case WVR_InputId_Alias1_System:
+        default:
+            break;
+    }
+
+    return ret;
+}
+
+uint16_t WaveCloudXRApp::GetPressInputIndex(const uint8_t hand, const bool pressed, const WVR_InputId wvrInputId) {
+
+    uint16_t ret = 999;
+    switch(wvrInputId) {
+        case WVR_InputId_Alias1_Thumbstick:
+            ret = 8; // "/input/joystick/click"
+            break;
+        case WVR_InputId_Alias1_Trigger:
+            ret = 2; // "/input/trigger/click"
+            break;
+        case WVR_InputId_Alias1_Grip:
+            ret = 5; // "/input/grip/click"
+            break;
+        // WVR only sends A/B
+        case WVR_InputId_Alias1_A:
+            if (hand == HAND_RIGHT) ret = 12; // "/input/a/click"
+            if (hand == HAND_LEFT) ret = 14; // "/input/x/click"
+            break;
+        case WVR_InputId_Alias1_B:
+            if (hand == HAND_RIGHT) ret = 13; // "/input/b/click"
+            if (hand == HAND_LEFT) ret = 15; // "/input/y/click"
+            break;
+        case WVR_InputId_Alias1_X:
+            ret = 14; // "/input/x/click"
+            break;
+        case WVR_InputId_Alias1_Y:
+            ret = 15; // "/input/y/click"
+            break;
+        case WVR_InputId_Alias1_Menu:
+            // ret = 1; // "/input/application_menu/click"
+            ret = 0; // "/input/system/click"
+            break;
+        case WVR_InputId_Alias1_System:
+            ret = 0; // "/input/system/click"
+            break;
+        default:
+            break;
+    }
+    return ret;
+}
+
+uint16_t WaveCloudXRApp::GetAnalogInputIndex(const bool pressed, const WVR_InputId wvrInputId) {
+
+    uint16_t ret = 999;
+    switch(wvrInputId) {
+        /*case WVR_InputId_Alias1_Thumbstick:
+            ret = 10; // "/input/joystick/x"
+            ret = 11; // "/input/joystick/y"
+            break;*/
+        case WVR_InputId_Alias1_Trigger:
+            ret = 4; // "/input/trigger/click"
+            break;
+        case WVR_InputId_Alias1_Grip:
+            ret = 7; // "/input/grip/click"
+            break;
+        default:
+            break;
+    }
+    return ret;
+}
+
+void WaveCloudXRApp::CheckStreamQuality() {
+
+    // Log connection stats every 3 seconds
+    const int STATS_INTERVAL_SEC = 3;
+    mFramesUntilStats--;
+    cxrConnectionStats mStats = {};
+    if (mFramesUntilStats <= 0 &&
+        cxrGetConnectionStats(mReceiver, &mStats) == cxrError_Success)
+    {
+        // Capture the key connection statistics
+        char statsString[64] = { 0 };
+        snprintf(statsString, 64, "FPS: %6.1f    Bitrate (kbps): %5d    Latency (ms): %3d", mStats.framesPerSecond, mStats.bandwidthUtilizationKbps, mStats.roundTripDelayMs);
+
+        // Turn the connection quality into a visual representation along the lines of a signal strength bar
+        char qualityString[64] = { 0 };
+        snprintf(qualityString, 64, "Connection quality: [%s]",
+                 mStats.quality == cxrConnectionQuality_Bad ? "Bad" :
+                 mStats.quality == cxrConnectionQuality_Poor ? "Poor" :
+                 mStats.quality == cxrConnectionQuality_Fair ? "Fair" :
+                 mStats.quality == cxrConnectionQuality_Good ? "Good" :
+                 mStats.quality == cxrConnectionQuality_Excellent ? "Excellent" : "Invalid");
+
+        // There could be multiple reasons for low quality however we show only the most impactful to the end user here
+        char reasonString[64] = { 0 };
+        if (mStats.quality <= cxrConnectionQuality_Fair)
+        {
+            if (mStats.qualityReasons == cxrConnectionQualityReason_EstimatingQuality)
+            {
+                snprintf(reasonString, 64, "Reason: Estimating quality");
+            }
+            else if (mStats.qualityReasons & cxrConnectionQualityReason_HighLatency)
+            {
+                snprintf(reasonString, 64, "Reason: High Latency (ms): %3d", mStats.roundTripDelayMs);
+            }
+            else if (mStats.qualityReasons & cxrConnectionQualityReason_LowBandwidth)
+            {
+                snprintf(reasonString, 64, "Reason: Low Bandwidth (kbps): %5d", mStats.bandwidthAvailableKbps);
+            }
+            else if (mStats.qualityReasons & cxrConnectionQualityReason_HighPacketLoss)
+            {
+                if (mStats.totalPacketsLost == 0)
+                {
+                    snprintf(reasonString, 64, "Reason: High Packet Loss (Recoverable)");
+                }
+                else
+                {
+                    snprintf(reasonString, 64, "Reason: High Packet Loss (%%): %3.1f", 100.0f * mStats.totalPacketsLost / mStats.totalPacketsReceived);
+                }
+            }
+        }
+
+        LOGI("%s    %s    %s", statsString, qualityString, reasonString);
+        mFramesUntilStats = (int)mStats.framesPerSecond * STATS_INTERVAL_SEC;
+    }
+}
+

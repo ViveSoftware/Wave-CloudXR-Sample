@@ -49,7 +49,8 @@ public:
     void GetTrackingState(cxrVRTrackingState* trackingState);
     void TriggerHaptic(const cxrHapticFeedback* haptic);
     cxrBool RenderAudio(const cxrAudioFrame*);
-    void HandleClientState(cxrClientState state, cxrStateReason reason);
+    // void HandleClientState(cxrClientState state, cxrStateReason reason);
+    void HandleClientState(void* context, cxrClientState state, cxrError error);
 
     /* CloudXR interfaces */
     /*
@@ -61,6 +62,9 @@ protected:
     void Resume();
 
 protected:
+    uint16_t GetTouchInputIndex(const bool touched, const WVR_InputId wvrInputId);
+    uint16_t GetPressInputIndex(const uint8_t hand, const bool pressed, const WVR_InputId wvrInputId);
+    uint16_t GetAnalogInputIndex(const bool pressed, const WVR_InputId wvrInputId);
     void updateTime();
     void processVREvent(const WVR_Event_t & event);
 
@@ -94,18 +98,9 @@ protected:
      * Render the video frame to the currently bound target surface
      */
     bool Render(const uint32_t eye, WVR_TextureParams_t eyeTexture, const bool frameValid);
+
+    void CheckStreamQuality();
 private:
-
-    struct WvrCxrButtonMapping
-    {
-        WVR_InputId wvrId;
-        cxrButtonId cxrId;
-        char nameStr[32];
-    };
-
-    bool HandleButtonRemap(uint32_t idx, cxrControllerTrackingState &ctl, uint64_t &inputMask,
-                           WVR_InputId inId, WVR_EventType evType, const WvrCxrButtonMapping mappingSet[], int mapSize, bool left6dof);
-
 
     // CloudXR
     cxrFramesLatched mFramesLatched{};
@@ -118,7 +113,7 @@ private:
 
     bool mStateDirty = false;
     cxrClientState mClientState = cxrClientState_ReadyToConnect;
-    cxrStateReason mClientStateReason = cxrStateReason_NoError;
+    // cxrStateReason mClientStateReason = cxrStateReason_NoError;
 
     // Audio
     oboe::AudioStream* mPlaybackStream= nullptr;
@@ -131,6 +126,22 @@ private:
     cxrVRTrackingState mCXRPoseState;
     WVR_PoseState_t mHmdPose;
     WVR_PoseState_t mCtrlPoses[2];
+
+    // Input
+    const uint8_t HAND_LEFT = 0;
+    const uint8_t HAND_RIGHT = 1;
+    const uint8_t IDX_TRIGGER = 0;
+    const uint8_t IDX_GRIP = 1;
+    const uint8_t IDX_THUMBSTICK = 2;
+    cxrControllerHandle mControllers[2] = {};
+    bool mUpdateAnalogs[2][3] = {false};// [L|R][TRIGGER|GRIP|THUMBSTICK]
+    // CXR Input event container
+    cxrControllerEvent mCTLEvents[2][64] = {};
+    uint32_t mCTLEventCount[2] = {0};
+
+    uint32_t mLastButtons = 0;
+    uint32_t mLastTouches = 0;
+    WVR_AnalogState_t mLastAnalogs[3];
 
     bool mIs6DoFHMD = false;
     bool mIs6DoFController[2] = {false, false};
@@ -158,5 +169,8 @@ private:
     int mFrameCount = 0;
     float mFPS = 0;
     uint32_t mClockCount = 0;
+    uint8_t mRetryConnCount = 0;
+    const uint8_t mMaxRetryConnCount = 5;
 
+    int mFramesUntilStats = 60;
 };
