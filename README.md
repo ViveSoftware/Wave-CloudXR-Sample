@@ -1,7 +1,7 @@
 
 # Wave CloudXR Sample Client
 
-Demonstrate how to program with NVIDIA CloudXR SDK for VIVE Focus 3 headset. You can start to develop your own CloudXR application for VIVE Focus 3 based on this sample client. 
+Demonstrate how to program with NVIDIA CloudXR SDK for VIVE Focus 3 and VIVE XR Elite headset. You can start to develop your own CloudXR application based on this sample client. 
 
 Below are the instructions to build from source. Alternatively you can find a pre-built APK in the [Releases](https://github.com/ViveSoftware/Wave-CloudXR-Sample/releases) section.
 
