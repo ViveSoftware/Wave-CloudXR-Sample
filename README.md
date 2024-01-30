@@ -6,7 +6,7 @@ Demonstrate how to program with NVIDIA CloudXR SDK for VIVE Focus 3 and VIVE XR 
 Below are the instructions to build from source. Alternatively you can find a pre-built APK in the [Releases](https://github.com/ViveSoftware/Wave-CloudXR-Sample/releases) section.
 
 ## Requirements
-- HTC VIVE Focus 3
+- HTC VIVE Focus 3 or VIVE XR Elite 
 - [Wave Native SDK 4.3.0](https://developer.vive.com/resources/vive-wave/download/latest/) or later
 - [CloudXR SDK 4.0](https://developer.nvidia.com/nvidia-cloudxr-sdk)
 - [Google OBOE SDK 1.5.0](https://github.com/google/oboe/releases/tag/1.5.0)
@@ -25,8 +25,8 @@ Below are the instructions to build from source. Alternatively you can find a pr
 
 ## Installation & Usage
 1. Install CloudXR server on your PC.
-2. Build Wave CloudXR Sample Client and install the apk to your VIVE Focus 3
-3. Modify the IP address in ***CloudXRLaunchOptions.txt*** and push it into ***/sdcard*** of your VIVE Focus 3. 
+2. Build Wave CloudXR Sample Client and install the apk to your headset
+3. Modify the IP address in ***CloudXRLaunchOptions.txt*** and push it into ***/sdcard*** of your headset. 
    - Please read [CloudXR Command-Line Options](https://docs.nvidia.com/cloudxr-sdk/usr_guide/cmd_line_options.html#command-line-options) for the format of ***CloudXRLaunchOptions.txt***)
 5. Launch the apk to start streaming
 
