@@ -190,7 +190,11 @@ bool WaveCloudXRApp::initGL() {
     gettimeofday(&mRtcTime, NULL);
 
     // Setup stereo render targets
-    WVR_GetRenderTargetSize(&mRenderWidth, &mRenderHeight);
+    // WVR_GetRenderTargetSize(&mRenderWidth, &mRenderHeight);
+
+    // Focus 3 panel resolution
+    mRenderWidth = 2448;
+    mRenderHeight = 2448;
     LOGD("Recommended size is %ux%u", mRenderWidth, mRenderHeight);
     if (mRenderWidth == 0 || mRenderHeight == 0) {
         LOGE("Please check server configure");
@@ -841,7 +845,7 @@ bool WaveCloudXRApp::InitReceiver() {
     desc.deviceDesc = mDeviceDesc;
     desc.clientCallbacks = mClientCallbacks;
     desc.shareContext = &mContext;
-    desc.debugFlags = mOptions.mDebugFlags | cxrDebugFlags_OutputLinearRGBColor;
+    desc.debugFlags = mOptions.mDebugFlags | cxrDebugFlags_OutputLinearRGBColor | cxrDebugFlags_EnableAImageReaderDecoder;
     desc.logMaxSizeKB = CLOUDXR_LOG_MAX_DEFAULT;
     desc.logMaxAgeDays = CLOUDXR_LOG_MAX_DEFAULT;
     strncpy(desc.appOutputPath, "sdcard/CloudXR/logs/", CXR_MAX_PATH - 1); // log file path

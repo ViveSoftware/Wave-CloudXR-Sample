@@ -26,13 +26,7 @@ android {
 
     flavorDimensions "version"
     productFlavors {
-        bit32 {
-            dimension "version"
-            applicationId "com.htc.vr.samples.wavecloudxr.armv7a"
-            ndk {
-                abiFilter 'armeabi-v7a'
-            }
-        }
+
         bit64 {
             dimension "version"
             applicationId "com.htc.vr.samples.wavecloudxr"
