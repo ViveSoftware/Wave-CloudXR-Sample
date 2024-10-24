@@ -29,7 +29,7 @@
 #define LATCHFRAME_TIMEOUT_MS 100 // timeout to fetch a frame from CloudXR server
 #define FRAME_TIMEOUT_SECOND 10.0f // retry connection if no valid frame or connection timeout
 
-#define VERSION_CODE "v1.5"
+#define VERSION_CODE "v1.7"
 
 #define CASE(x) \
 case x:     \
